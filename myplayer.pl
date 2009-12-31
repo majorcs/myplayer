@@ -133,12 +133,17 @@ sub change_song
             my ($start_time) = $_ =~ /^\[(.*?)\]/;
             my ($min, $sec, $msec) = ($start_time =~ /(\d+):(\d+):(\d+)/);
             $start_time = (($min*60)+$sec)*1000+$msec;
+
+            my ($end_time) = $_ =~ /\[([0-9:]+)\]$/;
+            my ($min, $sec, $msec) = ($end_time =~ /(\d+):(\d+):(\d+)/);
+            $end_time = (($min*60)+$sec)*1000+$msec;
+
             my $line = $_;
             $line =~ s/\[.*?\]//g;
-            push(@lines, [$start_time, $line]);
+            push(@lines, [$start_time, $line, $end_time]);
         }
         close(F);
-        #print Dumper(\@lines);
+        print Dumper(\@lines);
         
         $winDisplay->show();
         my ($width, $height) = $winDisplay->get_size();
@@ -334,10 +339,10 @@ sub update_lines
         }
     }
 
-    if (($last_line == $i) and ($lines[$i]->[1] !~ /^\s*$/)) 
-    {
-        return;
-    }
+    #if (($last_line == $i) and ($lines[$i]->[1] !~ /^\s*$/)) 
+    #{
+    #    return;
+    #}
     $last_line = $i;
     my $next_time = $lines[$i+1]->[0];
     
@@ -348,6 +353,17 @@ sub update_lines
             if (($i != 3) or ($lines[$last_line - 3 + $i]->[1] !~ /^\s*$/))
             {
                 my $line = $lines[$last_line - 3 + $i]->[1];
+                ### If the line has an ending timestamp
+                if (($i == 3) and ($lines[$last_line - 3 + $i]->[2] != 0))
+                {
+                    my $linelen = length($line);
+                    my $linetime = $lines[$last_line - 3 + $i]->[2] - $lines[$last_line - 3 + $i]->[0];
+                    my $t = $time*1000 - $lines[$last_line - 3 + $i]->[0];
+                    my $pos = int($linelen * $t / $linetime);
+                    $line = "<span foreground='red'>" . substr($line, 0, $pos) . "</span>" . substr($line, $pos);
+                    #debug(10, "LINE: $line");
+                    #debug(8, "LEN: $linelen, T1: $linetime, T2: $t, POS: $pos");
+                }
                 $builder->get_object("lblLine$i")->set_label($line);
             }
             else
