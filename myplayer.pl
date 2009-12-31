@@ -25,15 +25,31 @@ my $last_line = -1;
 my $should_play = 0;
 my $playing = -1;
 
-opendir(SONG, $song_dir);
-my @songs = sort { $a->[0] cmp $b->[0] }  map { my $mp3=MP3::Tag->new("$song_dir/$_"); my @info=$mp3->autoinfo; utf8::decode($_); [$info[0], $info[2], $_] } grep { /mp3$/i } readdir(SONG);
-closedir(SONG);
-
 my $glade_file = 'myplayer.glade';
 
 my $builder = Gtk2::Builder->new();
 my $i = $builder->add_from_file ($glade_file);
 $builder->connect_signals();
+
+my $dlgStart = $builder->get_object('dlgStart');
+$dlgStart->show();
+my $progress = $builder->get_object('pbLoading');
+
+opendir(SONG, $song_dir);
+my @files = grep { /mp3$/i } readdir(SONG);
+closedir(SONG);
+my $cnt = 0;
+my @songs = sort { $a->[0] cmp $b->[0] }
+                map 
+                { 
+                      my $mp3=MP3::Tag->new("$song_dir/$_"); 
+                      my @info=$mp3->autoinfo; 
+                      $progress->set_text("$cnt/$#files");
+                      $progress->set_fraction($cnt++/$#files);
+                      Gtk2->main_iteration;
+                      utf8::decode($_); 
+                      [$info[0], $info[2], $_] 
+                } @files;
 
 my $song_list = Gtk2::SimpleList->new_from_treeview (
     $builder->get_object('tvSongs'),
@@ -47,17 +63,19 @@ push(@{$song_list->{data}}, @songs);
 
 my $winDisplay = $builder->get_object('winDisplay');
 my $winPlayer = $builder->get_object('winPlayer');
+$dlgStart->hide();
 $winPlayer->show();
+Gtk2->main_iteration;
 
 my $player = new Audio::Play::MPG123(mpg123args => ['-o', 'esd'] );
 
-Glib::Timeout->add ($period, \&timer);
 
 foreach $i (1..5)
 {
     $builder->get_object("viewport$i")->modify_bg('normal', ($i == 3) ? Gtk2::Gdk::Color->parse( 'yellow' ) : Gtk2::Gdk::Color->parse( 'black' ));
 }
 
+Glib::Timeout->add ($period, \&timer);
 Gtk2->main;
 
 exit(0);
@@ -143,7 +161,7 @@ sub change_song
             push(@lines, [$start_time, $line, $end_time]);
         }
         close(F);
-        print Dumper(\@lines);
+        #print Dumper(\@lines);
         
         $winDisplay->show();
         my ($width, $height) = $winDisplay->get_size();
