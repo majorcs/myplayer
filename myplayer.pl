@@ -24,6 +24,10 @@ my $time_offset = 0;
 my $last_line = -1;
 my $should_play = 0;
 my $playing = -1;
+my $capturing = 0;
+my $frame = 0;
+my $dirty = 0;
+my $last_frame = '';
 
 my $glade_file = 'myplayer.glade';
 
@@ -116,6 +120,7 @@ sub change_song
     my($num, $fname) = @_;
 
     debug(5, "Starting: %s", $fname);
+    $frame = 0;
     my $ret = $player->load($fname);
     $should_play = 1;
     $player->poll(1);
@@ -179,6 +184,10 @@ sub change_song
 sub timer
 {
     $player->poll(0); 
+    if ($capturing)
+    {
+        save_picture();
+    }
     
     if ($player->state == 2)
     {
@@ -330,6 +339,18 @@ sub on_winDisplay_key_press_event
     {
         play_next();
     }
+    elsif ($event->keyval == 65515)
+    {
+        #my $lpixbuf = Gtk2::Gdk::Pixbuf->new('rgb', 0, 8, 20, 20);
+        #my @a = $lpixbuf->get_formats();
+        #print Dumper(\@a);
+        
+        $capturing = not $capturing;
+        if ($capturing) 
+        {
+            #$winDisplay->resize(720, 576);
+        }
+    }
     
     return 0;
 }
@@ -364,8 +385,10 @@ sub update_lines
     $last_line = $i;
     my $next_time = $lines[$i+1]->[0];
     
+    $dirty = 0;
     foreach my $i (1..5)
     {
+        my $old_content = $builder->get_object("lblLine$i")->get_label();
         if (($last_line - 3 + $i) >= 0)
         {
             if (($i != 3) or ($lines[$last_line - 3 + $i]->[1] !~ /^\s*$/))
@@ -383,6 +406,10 @@ sub update_lines
                     #debug(8, "LEN: $linelen, T1: $linetime, T2: $t, POS: $pos");
                 }
                 $builder->get_object("lblLine$i")->set_label($line);
+                if ($line ne $old_content)
+                {
+                    $dirty=1;
+                }
             }
             else
             {
@@ -398,11 +425,19 @@ sub update_lines
                     $timestr = "● " x $diff;
                 }
                 $builder->get_object("lblLine$i")->set_label($timestr);
+                if ($timestr ne $old_content)
+                {
+                    $dirty=1;
+                }
             }
         }
         else
         {
             $builder->get_object("lblLine$i")->set_label('');
+            if ('' ne $old_content)
+            {
+                $dirty=1;
+            }
         }
     }
 }
@@ -411,7 +446,7 @@ sub play_next
 {
     if ($builder->get_object('tbShuffle')->get_active())
     {
-        $playing = rand(scalar(@{$song_list->{data}}));
+        $playing = int(rand(scalar(@{$song_list->{data}})));
     }
     else
     {
@@ -426,4 +461,43 @@ sub play_next
 sub on_btnNext_clicked
 {
     play_next();
+}
+
+sub save_picture
+{
+    if (!$playing)
+    {
+        return;
+    }
+
+    my $dirname = @{$song_list->{data}}[$playing]->[1] . "_" . @{$song_list->{data}}[$playing]->[2];
+    my $name = sprintf("%s/%010d.png", $dirname, $frame++);
+    if ($dirty)
+    {
+        my ($width, $height) = $winDisplay->window->get_size();
+        if (! -d $dirname)
+        {
+            mkdir($dirname);
+        }
+
+        my $lpixbuf = Gtk2::Gdk::Pixbuf->new('rgb', 0, 8, $width, $height);
+
+        $lpixbuf->get_from_drawable ($winDisplay->window, undef, 0, 0, 0, 0, $width, $height);
+
+        #only jpeg and png is supported !!!! it's 'jpeg', not 'jpg'
+        #$lpixbuf->save ("$prefix-area.jpg", 'jpeg', quality => 100);
+        $lpixbuf->save ($name, 'png');
+        $last_frame = $name;
+    }
+    elsif ($last_frame ne '')
+    {
+        link($last_frame, $name);
+    }
+    
+    ## Put everything into a video:
+    ## ffmpeg2theora -F 10 -v 10 '%010d.png' -o tmp.ogv
+    ## mpg123 -w 'audio.wav' '/home/major/Music/Karaoke/Mate Peter - Zene nelkul mit erek en.mp3'
+    ## oggenc audio.wav
+    ## oggz-merge -o v.ogv tmp.ogv audio.ogg
+    
 }
