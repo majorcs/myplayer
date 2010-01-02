@@ -366,6 +366,8 @@ sub on_winDisplay_key_press_event
         if ($capturing) 
         {
             $winDisplay->set_title("Karaoke - Capturing");
+            $player->jump(0);
+            $capture_time = time();
             #$winDisplay->resize(720, 576);
         }
         else
