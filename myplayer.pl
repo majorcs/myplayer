@@ -4,6 +4,7 @@ use Data::Dumper;
 use Term::ANSIColor;
 use Audio::Play::MPG123;
 use MP3::Tag;
+use Time::HiRes qw ( time alarm sleep );
 
 use Glib qw/TRUE FALSE/;
 use Gtk2 '-init';
@@ -25,6 +26,7 @@ my $last_line = -1;
 my $should_play = 0;
 my $playing = -1;
 my $capturing = 0;
+my $capture_time = 0;
 my $frame = 0;
 my $dirty = 0;
 my $last_frame = '';
@@ -121,6 +123,8 @@ sub change_song
 
     debug(5, "Starting: %s", $fname);
     $frame = 0;
+    $capture_time = time();
+
     my $ret = $player->load($fname);
     $should_play = 1;
     $player->poll(1);
@@ -187,6 +191,17 @@ sub timer
     if ($capturing)
     {
         save_picture();
+        my $dt = time() - $capture_time;
+        my $ft = $frame * $period / 1000;
+        if ($dt > $ft)
+        {
+            debug(7, "Increase frame counter... ($dt > $ft)");
+            save_picture();
+        }
+        else
+        {
+            #debug(9, "DT: %lf, FT: %lf, DIFF: %lf", $dt, $ft, ($dt - $ft));
+        }
     }
     
     if ($player->state == 2)
@@ -348,7 +363,12 @@ sub on_winDisplay_key_press_event
         $capturing = not $capturing;
         if ($capturing) 
         {
+            $winDisplay->set_title("Karaoke - Capturing");
             #$winDisplay->resize(720, 576);
+        }
+        else
+        {
+            $winDisplay->set_title("Karaoke");
         }
     }
     
@@ -472,6 +492,8 @@ sub save_picture
 
     my $dirname = @{$song_list->{data}}[$playing]->[1] . "_" . @{$song_list->{data}}[$playing]->[2];
     my $name = sprintf("%s/%010d.png", $dirname, $frame++);
+
+
     if ($dirty)
     {
         my ($width, $height) = $winDisplay->window->get_size();
@@ -500,4 +522,6 @@ sub save_picture
     ## oggenc audio.wav
     ## oggz-merge -o v.ogv tmp.ogv audio.ogg
     
+    return($frame);
 }
+
