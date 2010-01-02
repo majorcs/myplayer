@@ -154,22 +154,9 @@ sub change_song
         {
             chomp;
             utf8::decode($_);
-            utf8::decode($_);
-            #s/õ/ő/g;
-            #s/û/ű/g;
-            #s/�/ü/g;
-            #s/�/á/g;
-            my ($start_time) = $_ =~ /^\[(.*?)\]/;
-            my ($min, $sec, $msec) = ($start_time =~ /(\d+):(\d+):(\d+)/);
-            $start_time = (($min*60)+$sec)*1000+$msec;
-
-            my ($end_time) = $_ =~ /\[([0-9:]+)\]$/;
-            my ($min, $sec, $msec) = ($end_time =~ /(\d+):(\d+):(\d+)/);
-            $end_time = (($min*60)+$sec)*1000+$msec;
-
-            my $line = $_;
-            $line =~ s/\[.*?\]//g;
-            push(@lines, [$start_time, $line, $end_time]);
+            
+            push(@lines, [map { (/(\d+):(\d+):(\d+)/) ? ($1*60+$2)*1000+$3 : $_ } (/(\[[0-9:]+\]|[^\[]+)/g)] );
+            
         }
         close(F);
         #print Dumper(\@lines);
@@ -278,15 +265,16 @@ sub resize
     my $text_width = 0;
     my $text_height = 0;
     my $fs = 99;
-    foreach (@lines)
+    for (my $i=0; $i<=$#lines; $i++)
     {
+        my $line = get_line($i, 0);
         $fontsize = 14;
         # print Dumper $_;
-        $pango_layout->set_text ($_->[1]);
+        $pango_layout->set_text ($line);
         #$text_width = 0;
         #$text_height = 0;
         
-        if ($_->[1] =~ /^\s*$/)
+        if ($line =~ /^\s*$/)
         {
             next;
         }
@@ -295,7 +283,7 @@ sub resize
            my $font_desc = Gtk2::Pango::FontDescription->from_string("Arial Bold");
            $pango_layout->set_font_description($font_desc);
            my $f = $fontsize * 1024;
-           $pango_layout->set_markup ("<span foreground=\"black\" background=\"yellow\" size=\"$f\"><b>" . $_->[1] . '</b></span>');
+           $pango_layout->set_markup ("<span foreground=\"black\" background=\"yellow\" size=\"$f\"><b>" . $line . '</b></span>');
            ($text_width, $text_height) = $pango_layout->get_pixel_size();
            #print("+++ Testing: FontSize: $fontsize, TWidth: $text_width x $text_height - $_->[1]\n");
            $fontsize += 2;
@@ -305,7 +293,7 @@ sub resize
            my $font_desc = Gtk2::Pango::FontDescription->from_string("Arial Bold");
            $pango_layout->set_font_description($font_desc);
            my $f = $fontsize * 1024;
-           $pango_layout->set_markup ("<span foreground=\"black\" background=\"yellow\" size=\"$f\"><b>" . $_->[1] . '</b></span>');
+           $pango_layout->set_markup ("<span foreground=\"black\" background=\"yellow\" size=\"$f\"><b>" . $line . '</b></span>');
            ($text_width, $text_height) = $pango_layout->get_pixel_size();
            #print("--- Testing: FontSize: $fontsize, TWidth: $text_width x $text_height - $_->[1]\n");
            $fontsize -= 2;
@@ -445,22 +433,11 @@ sub update_lines
         {
             if (($i != 3) or ($lines[$curline]->[1] !~ /^\s*$/))
             {
-                my $line = $lines[$curline]->[1];
-                ### If the line has an ending timestamp
-                if (($i == 3) and ($lines[$curline]->[2] != 0))
-                {
-                    my $linelen = length($line);
-                    my $linetime = $lines[$curline]->[2] - $lines[$curline]->[0];
-                    my $t = $time*1000 - $lines[$curline]->[0];
-                    my $pos = int($linelen * $t / $linetime);
-                    $line = "<span foreground='red'>" . substr($line, 0, $pos) . "</span>" . substr($line, $pos);
-                    #debug(10, "LINE: $line");
-                    #debug(8, "LEN: $linelen, T1: $linetime, T2: $t, POS: $pos");
-                }
-                $builder->get_object("lblLine$i")->set_label($line);
+                my $line = get_line($curline, ($i == 3) ? $time : 0);
                 if ($line ne $old_content)
                 {
                     $dirty=1;
+                    $builder->get_object("lblLine$i")->set_label($line);
                 }
             }
             else
@@ -476,19 +453,19 @@ sub update_lines
                 {
                     $timestr = "● " x $diff;
                 }
-                $builder->get_object("lblLine$i")->set_label($timestr);
                 if ($timestr ne $old_content)
                 {
                     $dirty=1;
+                    $builder->get_object("lblLine$i")->set_label($timestr);
                 }
             }
         }
         else
         {
-            $builder->get_object("lblLine$i")->set_label('');
             if ('' ne $old_content)
             {
                 $dirty=1;
+                $builder->get_object("lblLine$i")->set_label('');
             }
         }
     }
@@ -558,3 +535,43 @@ sub save_picture
     return($frame);
 }
 
+sub get_line
+{
+    my($line_num, $time) = @_;
+    
+    $time *= 1000;
+    my $line = $lines[$line_num];
+    my $ret = "";
+    if ($time == 0)
+    {
+        for ($i=1; $i <= $#$line; $i += 2)
+        {
+            $ret .= $line->[$i];
+        }
+    }
+    else
+    {
+        for ($i=1; $i <= $#$line; $i += 2)
+        {
+            if ($time > $line->[$i-1] and $time < $line->[$i+1])
+            {
+                my $linelen = length($line->[$i]);
+                my $linetime = $line->[$i+1] - $line->[$i-1];
+                my $t = $time - $line->[$i-1];
+                my $pos = int($linelen * $t / $linetime);
+                # debug(10, "LEN: $linelen, TIME: $time, $linetime, POS: $pos");
+                $ret = "<span foreground='red'>$ret" . substr($line->[$i], 0, $pos) . "</span>" . substr($line->[$i], $pos);
+            }
+            elsif (($i == $#$line - 1) and ($time > $line->[$i+1]))
+            {
+                $ret = "<span foreground='red'>$ret" . $line->[$i] . "</span>";
+            }
+            else
+            {
+                $ret .= $line->[$i];
+            }
+        }
+    }
+    
+    return($ret);
+}
