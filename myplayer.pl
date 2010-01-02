@@ -30,6 +30,7 @@ my $capture_time = 0;
 my $frame = 0;
 my $dirty = 0;
 my $last_frame = '';
+my $max_frame = 0;
 
 my $glade_file = 'myplayer.glade';
 
@@ -126,14 +127,15 @@ sub change_song
     $capture_time = time();
 
     my $ret = $player->load($fname);
+    debug(5, "Return value of startup: $ret");
     $should_play = 1;
     $player->poll(1);
     #print Dumper($player);
     my $play_pos = $builder->get_object('hsPlayPosition');
     $play_pos->set_range($player->frame->[2], $player->frame->[3]);
     $play_pos->set_value($player->frame->[2]);
-    debug(5, "Return value of startup: $ret");
     $song_list->select($num);
+    $max_frame = $player->frame->[1];
 
     my ($short_name) = ($fname =~ /^.*?([^\/]+)\.mp3/i);
     my $lyrics_fname = $lyrics_dir . "/$short_name.txt";
@@ -371,6 +373,28 @@ sub on_winDisplay_key_press_event
             $winDisplay->set_title("Karaoke");
         }
     }
+    ### FAST FORWARD
+    elsif ($event->keyval == 65363)
+    {
+        $player->jump('+500');
+    }
+    ### REWIND
+    elsif ($event->keyval == 65361)
+    {
+        $player->jump('-500');
+    }
+    ### END
+    elsif ($event->keyval == 65367)
+    {
+        $player->jump($max_frame - 500);
+        debug(7, "Jumping to the end (frame: %d)", $max_frame - 500);
+    }
+    ### HOME
+    elsif ($event->keyval == 65360)
+    {
+        $player->jump(0);
+        debug(7, "Jumping to the beginning");
+    }
     
     return 0;
 }
@@ -398,28 +422,34 @@ sub update_lines
         }
     }
 
+    #debug(10, "Line: $i - %d", $#lines);
     #if (($last_line == $i) and ($lines[$i]->[1] !~ /^\s*$/)) 
     #{
     #    return;
     #}
     $last_line = $i;
-    my $next_time = $lines[$i+1]->[0];
+    my $next_time;
+    if ($i+1 <= $#lines)
+    {
+        $next_time = $lines[$i+1]->[0];
+    }
     
     $dirty = 0;
     foreach my $i (1..5)
     {
         my $old_content = $builder->get_object("lblLine$i")->get_label();
-        if (($last_line - 3 + $i) >= 0)
+        my $curline = $last_line - 3 + $i;
+        if (($curline >= 0) and ($curline <= $#lines))
         {
-            if (($i != 3) or ($lines[$last_line - 3 + $i]->[1] !~ /^\s*$/))
+            if (($i != 3) or ($lines[$curline]->[1] !~ /^\s*$/))
             {
-                my $line = $lines[$last_line - 3 + $i]->[1];
+                my $line = $lines[$curline]->[1];
                 ### If the line has an ending timestamp
-                if (($i == 3) and ($lines[$last_line - 3 + $i]->[2] != 0))
+                if (($i == 3) and ($lines[$curline]->[2] != 0))
                 {
                     my $linelen = length($line);
-                    my $linetime = $lines[$last_line - 3 + $i]->[2] - $lines[$last_line - 3 + $i]->[0];
-                    my $t = $time*1000 - $lines[$last_line - 3 + $i]->[0];
+                    my $linetime = $lines[$curline]->[2] - $lines[$curline]->[0];
+                    my $t = $time*1000 - $lines[$curline]->[0];
                     my $pos = int($linelen * $t / $linetime);
                     $line = "<span foreground='red'>" . substr($line, 0, $pos) . "</span>" . substr($line, $pos);
                     #debug(10, "LINE: $line");
@@ -460,6 +490,7 @@ sub update_lines
             }
         }
     }
+    
 }
 
 sub play_next
