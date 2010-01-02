@@ -416,11 +416,11 @@ sub update_lines
         #print Dumper $lines[$i];
         if ($lines[$i]->[0] > ($time*1000+$time_offset) )
         {
-            $i--;
             # print("D: $i - ".$lines[$i]->[1]."-".$lines[$i]->[0]."\n");
             last;
         }
     }
+    $i--;
 
     #debug(10, "Line: $i - %d", $#lines);
     #if (($last_line == $i) and ($lines[$i]->[1] !~ /^\s*$/)) 
