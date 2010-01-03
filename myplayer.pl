@@ -10,6 +10,8 @@ use Glib qw/TRUE FALSE/;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
 
+use GStreamer '-init';
+
 use strict;
 use utf8;
 
@@ -30,7 +32,9 @@ my $capture_time = 0;
 my $frame = 0;
 my $dirty = 0;
 my $last_frame = '';
-my $max_frame = 0;
+my $player_pos = 0;
+my $player_state = '';
+my $player_dur = 0;
 
 my $glade_file = 'myplayer.glade';
 
@@ -74,7 +78,14 @@ $dlgStart->hide();
 $winPlayer->show();
 Gtk2->main_iteration;
 
-my $player = new Audio::Play::MPG123(mpg123args => ['-o', 'esd'] );
+my $player = GStreamer::ElementFactory->make(playbin => 'playbin');
+my $bus=$player->get_bus;
+$bus->add_signal_watch;
+# $bus->signal_connect('message' => \&bus_message);
+$bus->signal_connect('message::eos' => \&bus_message);
+$bus->signal_connect('message::duration' => \&bus_message);
+$bus->signal_connect('message::error' => \&bus_message);
+$bus->signal_connect('message::state-changed' => \&bus_message);
 
 
 foreach $i (1..5)
@@ -104,6 +115,7 @@ sub on_winPlayer_delete_event
 {
     debug(5, "Exiting...");
     
+    $player -> set_state("null");
     Gtk2->main_quit();
 }
 
@@ -124,18 +136,20 @@ sub change_song
 
     debug(5, "Starting: %s", $fname);
     $frame = 0;
+    $player_dur = 0;
     $capture_time = time();
 
-    my $ret = $player->load($fname);
+    $player -> set_state("null");
+    $player->set(uri => Glib::filename_to_uri $fname, "localhost");
+    my $ret = $player->set_state("playing");
+    
     debug(5, "Return value of startup: $ret");
     $should_play = 1;
-    $player->poll(1);
-    #print Dumper($player);
-    my $play_pos = $builder->get_object('hsPlayPosition');
-    $play_pos->set_range($player->frame->[2], $player->frame->[3]);
-    $play_pos->set_value($player->frame->[2]);
+
+    my $dur_query = GStreamer::Query::Duration -> new("time");
+    $player->query($dur_query);
+
     $song_list->select($num);
-    $max_frame = $player->frame->[1];
 
     my ($short_name) = ($fname =~ /^.*?([^\/]+)\.mp3/i);
     my $lyrics_fname = $lyrics_dir . "/$short_name.txt";
@@ -176,7 +190,11 @@ sub change_song
 
 sub timer
 {
-    $player->poll(0); 
+    my $pos_query = GStreamer::Query::Position -> new("time");
+    $player->query($pos_query);
+    $player_pos = int(($pos_query -> position)[1] / 1000000);
+      
+      
     if ($capturing)
     {
         save_picture();
@@ -193,20 +211,20 @@ sub timer
         }
     }
     
-    if ($player->state == 2)
+    if ($player_state eq 'playing')
     {
-        $curr_time = $player->{frame}->[2];
-        my $play_pos = $builder->get_object('hsPlayPosition');
-        $play_pos->set_value($curr_time);
-        update_lines($curr_time);
-    }
-    elsif ($player->state == 0)
-    {
-        if ($should_play == 1)
+        if ($player_dur == 0)
         {
-            play_next();
+            my $play_pos = $builder->get_object('hsPlayPosition');
+            my $dur_query = GStreamer::Query::Duration -> new("time");
+            $player->query($dur_query);
+            $player_dur = ($dur_query -> duration)[1]/1000000;
+            $play_pos->set_range(0, $player_dur);
+            debug(5, "Duration: $player_dur");
         }
-        #debug(5, "State: ".$player->state);
+        my $play_pos = $builder->get_object('hsPlayPosition');
+        $play_pos->set_value($player_pos);
+        update_lines($player_pos/1000);
     }
         
     return 1;
@@ -218,7 +236,7 @@ sub on_hsPlayPosition_change_value
     
     my $pos = $range->get_value();
     
-    $player->jump($pos/$player->tpf);
+    #$player->jump($pos/$player->tpf);
     
     return 0;
 }
@@ -354,7 +372,7 @@ sub on_winDisplay_key_press_event
         if ($capturing) 
         {
             $winDisplay->set_title("Karaoke - Capturing");
-            $player->jump(0);
+            $player->seek(1, 'time', 'flush', 'set', 0, 'none', 0);
             $capture_time = time();
             #$winDisplay->resize(720, 576);
         }
@@ -366,23 +384,25 @@ sub on_winDisplay_key_press_event
     ### FAST FORWARD
     elsif ($event->keyval == 65363)
     {
-        $player->jump('+500');
+        $player->seek(1, 'time', 'flush', 'set', ($player_pos + 10000) * 1000000, 'none', 0);
+        #$player->jump('+500');
     }
     ### REWIND
     elsif ($event->keyval == 65361)
     {
-        $player->jump('-500');
+        $player->seek(1, 'time', 'flush', 'set', ($player_pos > 10000) ? ($player_pos - 10000) * 1000000 : 0, 'none', 0);
+        #$player->jump('-500');
     }
     ### END
     elsif ($event->keyval == 65367)
     {
-        $player->jump($max_frame - 500);
-        debug(7, "Jumping to the end (frame: %d)", $max_frame - 500);
+        $player->seek(1, 'time', 'flush', 'set', ($player_dur - 10000) * 1000000, 'none', 0);
+        debug(7, "Jumping to the end");
     }
     ### HOME
     elsif ($event->keyval == 65360)
     {
-        $player->jump(0);
+        $player->seek(1, 'time', 'flush', 'set', 0, 'none', 0);
         debug(7, "Jumping to the beginning");
     }
     
@@ -574,4 +594,23 @@ sub get_line
     }
     
     return($ret);
+}
+
+sub bus_message
+{
+    my ($bus, $message) = @_;
+    # print Dumper(@_);
+    
+    if ($message->type & "tag")
+    {
+        print($message->tag_list->{artist}->[0]."\n");
+    }
+    elsif ($message->type & "state-changed")
+    {
+        $player_state = $message->new_state;
+    }
+    elsif ($message->type & "eos")
+    {
+        play_next();
+    }
 }
