@@ -5,6 +5,10 @@ use Term::ANSIColor;
 use Audio::Play::MPG123;
 use MP3::Tag;
 use Time::HiRes qw ( time alarm sleep );
+use FindBin;
+use Config::Simple;
+use List::Util qw(min max);
+use Color::Calc;
 
 use Glib qw/TRUE FALSE/;
 use Gtk2 '-init';
@@ -15,10 +19,25 @@ use GStreamer '-init';
 use strict;
 use utf8;
 
+my $conf_file = "$ENV{HOME}/.mkp.conf";
+
+if (-z $conf_file || ! -f $conf_file)
+{
+    my $cfg = new Config::Simple(syntax=>'ini');
+    $cfg->param('__', time());
+    $cfg->save($conf_file);
+    $cfg = undef;
+}
+
+my %Config;
+tie %Config, "Config::Simple", $conf_file;
+tied(%Config)->autosave(1);
+
 $|=1;
-my $song_dir = '/home/major/Music/Karaoke';
-my $lyrics_dir = '/home/major/Documents/lyrics';
-my $period = 100; # millisec
+my $song_dir = $Config{'Directories.Song'} || '/home/major/Music/Karaoke';
+my $lyrics_dir = $Config{'Directories.Lyrics'} || '/home/major/Documents/lyrics';
+my $period = $Config{'System.Period'} || 100; # millisec
+my $period = max(50, min(500, $period));
 my $curr_time = 0;
 my $last_width = 0;
 my $last_height = 0;
@@ -36,7 +55,7 @@ my $player_pos = 0;
 my $player_state = '';
 my $player_dur = 0;
 
-my $glade_file = 'myplayer.glade';
+my $glade_file = "$FindBin::Bin/myplayer.glade";
 
 my $builder = Gtk2::Builder->new();
 my $i = $builder->add_from_file ($glade_file);
@@ -88,9 +107,10 @@ $bus->signal_connect('message::error' => \&bus_message);
 $bus->signal_connect('message::state-changed' => \&bus_message);
 
 
+my $cc = new Color::Calc(OutputFormat => 'html');
 foreach $i (1..5)
 {
-    $builder->get_object("viewport$i")->modify_bg('normal', ($i == 3) ? Gtk2::Gdk::Color->parse( 'yellow' ) : Gtk2::Gdk::Color->parse( 'black' ));
+    $builder->get_object("viewport$i")->modify_bg('normal', ($i == 3) ? Gtk2::Gdk::Color->parse( $Config{'Colors.HighlightBackground'} || 'yellow' ) : Gtk2::Gdk::Color->parse( $Config{'Colors.NormalBackground'} || 'black' ));
 }
 
 Glib::Timeout->add ($period, \&timer);
@@ -105,7 +125,7 @@ sub debug
     my $level = shift;
     my @dbg = @_;
     
-    $dbg[0] = color('bold red') . "[" . color('white') . $level . color('red') . "]" . color('reset') . $dbg[0];
+    $dbg[0] = Term::ANSIColor::color('bold red') . "[" . Term::ANSIColor::color('white') . $level . Term::ANSIColor::color('red') . "]" . Term::ANSIColor::color('reset') . $dbg[0];
     
     printf(@dbg);
     print("\n");
@@ -333,10 +353,11 @@ sub resize
     my $x = Pango::AttrWeight->new('bold');
     $al->insert($x);
     my $al_inverse = $al->copy();
-    my $x = Pango::AttrForeground->new(0xFFFF, 0xFFFF, 0x0);
+    my $cc = new Color::Calc(OutputFormat => 'tuple');
+    my @color = map { $_ * 0xFF } $cc->get($Config{'Colors.NormalText'} || 'yellow');
+    debug("COLOR: ", join(",", @color));
+    my $x = Pango::AttrForeground->new(@color);
     $al->insert($x);
-    #my $x = Pango::AttrForeground->new(0x0, 0x0, 0x0);
-    #$al_inverse->insert($x);
     foreach my $i (1..5)
     {
         $builder->get_object("lblLine$i")->set_attributes(($i == 3) ? $al_inverse : $al);
@@ -473,6 +494,10 @@ sub update_lines
                 {
                     $timestr = "● " x $diff;
                 }
+                my $cc = new Color::Calc(OutputFormat => 'html');
+                my $bullets_color = $Config{'Colors.Bullets'} || 'black';
+                $timestr = "<span foreground='$bullets_color'>".$timestr."</span>";
+                
                 if ($timestr ne $old_content)
                 {
                     $dirty=1;
@@ -562,6 +587,10 @@ sub get_line
     $time *= 1000;
     my $line = $lines[$line_num];
     my $ret = "";
+
+    my $cc = new Color::Calc(OutputFormat => 'html');
+    my $progress_color = $Config{'Colors.Progress'} || 'red';
+    my $foreground = $Config{'Colors.HighlightForeground'} || 'black';
     if ($time == 0)
     {
         for ($i=1; $i <= $#$line; $i += 2)
@@ -580,15 +609,16 @@ sub get_line
                 my $t = $time - $line->[$i-1];
                 my $pos = int($linelen * $t / $linetime);
                 # debug(10, "LEN: $linelen, TIME: $time, $linetime, POS: $pos");
-                $ret = "<span foreground='red'>$ret" . substr($line->[$i], 0, $pos) . "</span>" . substr($line->[$i], $pos);
+
+                $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span><span foreground='$foreground'>" . substr($line->[$i], $pos) . "</span>";
             }
             elsif (($i == $#$line - 1) and ($time > $line->[$i+1]))
             {
-                $ret = "<span foreground='red'>$ret" . $line->[$i] . "</span>";
+                $ret = "<span foreground='$progress_color'>$ret" . $line->[$i] . "</span>";
             }
             else
             {
-                $ret .= $line->[$i];
+                $ret .= "<span foreground='$foreground'>".$line->[$i]."</span>";
             }
         }
     }
