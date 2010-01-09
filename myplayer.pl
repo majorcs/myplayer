@@ -160,6 +160,7 @@ sub change_song
     $capture_time = time();
 
     $player -> set_state("null");
+    sleep(0.1);
     $player->set(uri => Glib::filename_to_uri $fname, "localhost");
     my $ret = $player->set_state("playing");
     
@@ -600,6 +601,7 @@ sub get_line
     }
     else
     {
+        my $span = 0;
         for ($i=1; $i <= $#$line; $i += 2)
         {
             if ($time > $line->[$i-1] and $time < $line->[$i+1])
@@ -610,7 +612,8 @@ sub get_line
                 my $pos = int($linelen * $t / $linetime);
                 # debug(10, "LEN: $linelen, TIME: $time, $linetime, POS: $pos");
 
-                $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span><span foreground='$foreground'>" . substr($line->[$i], $pos) . "</span>";
+                $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span><span foreground='$foreground'>" . substr($line->[$i], $pos);
+                $span = 1;
             }
             elsif (($i == $#$line - 1) and ($time > $line->[$i+1]))
             {
@@ -618,11 +621,20 @@ sub get_line
             }
             else
             {
-                $ret .= "<span foreground='$foreground'>".$line->[$i]."</span>";
+                #$ret .= "<span foreground='$foreground'>".$line->[$i]."</span>";
+                $ret .= $line->[$i];
             }
         }
+        if ($span)
+        {
+            $ret .= "</span>";
+        }
+        else
+        {
+            $ret = "<span foreground='$foreground'>$ret</span>";
+        }
     }
-    
+
     return($ret);
 }
 
