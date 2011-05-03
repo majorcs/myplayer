@@ -2,7 +2,6 @@
 
 use Data::Dumper;
 use Term::ANSIColor;
-use Audio::Play::MPG123;
 use MP3::Tag;
 use Time::HiRes qw ( time alarm sleep );
 use FindBin;
@@ -13,6 +12,7 @@ use Color::Calc;
 use Glib qw/TRUE FALSE/;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
+use Gtk2::SourceView;
 
 use GStreamer '-init';
 
@@ -60,6 +60,14 @@ my $glade_file = "$FindBin::Bin/myplayer.glade";
 my $builder = Gtk2::Builder->new();
 my $i = $builder->add_from_file ($glade_file);
 $builder->connect_signals();
+
+my $vbEditor = $builder->get_object('vbEditor');
+my $sb = Gtk2::SourceView::Buffer->new(undef);
+$sb->set_highlight(0);
+my $view = Gtk2::SourceView::View->new_with_buffer($sb);
+$view->show;
+$vbEditor->add($view);
+
 
 my $dlgStart = $builder->get_object('dlgStart');
 $dlgStart->show();
@@ -655,4 +663,11 @@ sub bus_message
     {
         play_next();
     }
+}
+
+sub on_ebEditor_key_press_event
+{
+    print Dumper(\@_);
+    
+    
 }
