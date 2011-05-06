@@ -86,6 +86,7 @@ my @songs = sort { $a->[0] cmp $b->[0] }
                       $progress->set_fraction($cnt++/$#files);
                       Gtk2->main_iteration;
                       utf8::decode($_); 
+#                      print("Song: $info[2]: $info[0]\n");
                       [$info[0], $info[2], $_] 
                 } @files;
 
@@ -493,11 +494,14 @@ sub update_lines
             else
             {
                 my $timestr;
+                my @timechars = qw(➉ ⑪ ⑫ ⑬ ⑭ ⑮ ⑯ ⑰ ⑱ ⑲ ⑳ ㉑ ㉒ ㉓ ㉔ ㉕ ㉖ ㉗ ㉘ ㉙ ㉚ ㉛ ㉜ ㉝ ㉞ ㉟ ㊱ ㊲ ㊳ ㊴ ㊵ ㊶ ㊷ ㊸ ㊹ ㊺ ㊻ ㊼ ㊽ ㊾ ㊿);
                 my $diff = int(($next_time - $time * 1000)/1000) + 1;
                 if ($diff > 9)
                 {
                     $timestr = (($diff % 2) ?  "◉ " : "● ");
                     $timestr .= "● " x 9;
+                    #$timestr .= $timechars[$diff-10];
+                    $timestr .= "($diff)";
                 }
                 else
                 {
@@ -595,6 +599,12 @@ sub get_line
     
     $time *= 1000;
     my $line = $lines[$line_num];
+    my $nextline = $lines[$line_num + 1];
+    my $nextstart;
+    if ($nextline)
+    {
+        $nextstart = $nextline->[0];
+    }
     my $ret = "";
 
     my $cc = new Color::Calc(OutputFormat => 'html');
@@ -618,7 +628,7 @@ sub get_line
                 my $linetime = $line->[$i+1] - $line->[$i-1];
                 my $t = $time - $line->[$i-1];
                 my $pos = int($linelen * $t / $linetime);
-                # debug(10, "LEN: $linelen, TIME: $time, $linetime, POS: $pos");
+                #debug(10, "LEN: $linelen, TIME: $time, $linetime, POS: $pos");
 
                 $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span><span foreground='$foreground'>" . substr($line->[$i], $pos);
                 $span = 1;
@@ -630,7 +640,18 @@ sub get_line
             else
             {
                 #$ret .= "<span foreground='$foreground'>".$line->[$i]."</span>";
-                $ret .= $line->[$i];
+                if ((defined $nextstart) and ($#$line == 1))
+                {
+                    my $linelen = length($line->[$i]);
+                    my $linetime = $nextstart - $line->[$i-1];
+                    my $t = $time - $line->[$i-1];
+                    my $pos = int($linelen * $t / $linetime);
+                    $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span>" . substr($line->[$i], $pos);
+                }
+                else
+                {
+                    $ret .= $line->[$i];                
+                }
             }
         }
         if ($span)
