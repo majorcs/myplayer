@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+# apt-get install libmp3-tag-perl libconfig-simple-perl libcolor-calc-perl libgtk2-sourceview2-perl libgstreamer-perl
+
 use Data::Dumper;
 use Term::ANSIColor;
 use MP3::Tag;
@@ -12,7 +14,7 @@ use Color::Calc;
 use Glib qw/TRUE FALSE/;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
-use Gtk2::SourceView;
+use Gtk2::SourceView2;
 
 use GStreamer '-init';
 
@@ -62,9 +64,9 @@ my $i = $builder->add_from_file ($glade_file);
 $builder->connect_signals();
 
 my $vbEditor = $builder->get_object('vbEditor');
-my $sb = Gtk2::SourceView::Buffer->new(undef);
-$sb->set_highlight(0);
-my $view = Gtk2::SourceView::View->new_with_buffer($sb);
+my $sb = Gtk2::SourceView2::Buffer->new(undef);
+# $sb->set_highlight(0);
+my $view = Gtk2::SourceView2::View->new_with_buffer($sb);
 $view->show;
 $vbEditor->add($view);
 
