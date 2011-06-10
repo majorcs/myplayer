@@ -56,6 +56,7 @@ my $last_frame = '';
 my $player_pos = 0;
 my $player_state = '';
 my $player_dur = 0;
+my $lyrics_fname = '';
 
 my $glade_file = "$FindBin::Bin/myplayer.glade";
 
@@ -64,10 +65,12 @@ my $i = $builder->add_from_file ($glade_file);
 $builder->connect_signals();
 
 my $vbEditor = $builder->get_object('vbEditor');
+
 my $sb = Gtk2::SourceView2::Buffer->new(undef);
 # $sb->set_highlight(0);
 my $view = Gtk2::SourceView2::View->new_with_buffer($sb);
 $view->show;
+$view->set_show_line_numbers(1);
 $vbEditor->add($view);
 
 
@@ -142,6 +145,110 @@ sub debug
     print("\n");
 }
 
+sub on_vbEditor_key_press_event
+{
+    my($win, $event, $tmp) = @_;
+
+    debug(5, sprintf("Key pressed: %d...", $event->keyval));
+    
+    # F5: insert new timestamp
+    if ($event->keyval == 65474)
+    {
+        #$sb
+        my $lines = $sb->get_line_count();
+        my $curpos = $sb->get_iter_at_mark($sb->get_insert());
+        my $line = $curpos->get_line();
+        my $start = $sb->get_iter_at_line($line);
+        my $end = (($lines - 1) > $line ) ? $sb->get_iter_at_line($line+1) : $sb->get_end_iter();
+        my $text = $sb->get_text($start, $end, 0);
+        my $lineoffset = $curpos->get_line_offset();
+        my $newpos;
+
+        my $stamp = sprintf("[%02d:%02d:%03d]", $player_pos / 60000, $player_pos % 60000 / 1000, $player_pos % 1000);
+
+        debug(5, sprintf("TimePos: %d, Lines: %d, Line: %d, Offset: %d, Text: %s", $player_pos, $lines, $line, $lineoffset, $text));
+
+        # Check if the cursor is at/within a timestamp. If yes, then replace it with the current timestamp
+        while ($text =~ /\[\d+:\d+:\d+\]/g) 
+        {
+            if (($lineoffset >= $-[0]) and ($lineoffset < $+[0]))
+            {
+                $text = substr($text, 0, $-[0]) . $stamp . substr($text, $+[0]);
+                $newpos = $-[0] + length($stamp);
+                last;
+            }
+        }
+        
+        # If the cursor wasn't in a timestamp, then simply insert the new timestamp where it is.
+        if (!$newpos)
+        {
+            $text = substr($text, 0, $lineoffset) . $stamp . substr($text, $lineoffset);
+            $newpos = $lineoffset + length($stamp);
+        }
+
+        # Find where to put the cursor after the new timestamp inserted
+        # If there is a non-whitespace character after a white-space, then put the cursor there.
+        # Or if there is a timestamp, the put the cursor there
+        # Or find the end of the line without a timestamp
+        my $moved;
+        while ($text =~ /\s\K[^\s]|\[\d+:\d+:\d+\]|(?<!\[\d\d:\d\d:\d\d\d\])$/g) 
+        {
+            printf("QQ: %d, %d\n", $-[0], $newpos);
+            if ($-[0] > $newpos)
+            {
+                $newpos = $-[0];
+                $moved = 1;
+                last;
+            }
+        }
+        # If we didn't find the next position, then go to the next line
+        if (!$moved)
+        {
+            $newpos = $sb->get_iter_at_line($line+1)->get_offset();
+        }
+        else
+        {
+            $newpos += $start->get_offset();
+        }
+
+        # $text = $stamp.$text;
+        
+        $sb->delete($start, $end);
+        $sb->insert($start, $text);
+        $sb->place_cursor($sb->get_iter_at_offset($newpos));
+        $view->scroll_mark_onscreen($sb->get_insert());
+
+    }
+}
+
+sub on_btnRemoveTags_clicked
+{
+    debug(5, "Remove timestamps...");
+
+    my $text = $sb->get_text($sb->get_start_iter, $sb->get_end_iter, 0);
+    
+    $text =~ s/\[\d+:\d+:\d+\]//g;
+    $sb->set_text($text);
+}
+
+sub on_btnLoadLyrics_clicked
+{
+    debug(5, sprintf("Load lyrics from file: %s", $lyrics_fname));
+    
+    if ($lyrics_fname)
+    {
+        open(F, $lyrics_fname);
+        local $/;
+        my $lyrics = <F>;
+        close(F);
+        utf8::decode($lyrics);
+        
+        $sb->set_text($lyrics);
+        $sb->place_cursor($sb->get_start_iter());
+        $view->grab_focus();
+    }
+}
+
 sub on_winPlayer_delete_event
 {
     debug(5, "Exiting...");
@@ -184,7 +291,7 @@ sub change_song
     $song_list->select($num);
 
     my ($short_name) = ($fname =~ /^.*?([^\/]+)\.mp3/i);
-    my $lyrics_fname = $lyrics_dir . "/$short_name.txt";
+    $lyrics_fname = $lyrics_dir . "/$short_name.txt";
     
     if (-r $lyrics_fname)
     {
