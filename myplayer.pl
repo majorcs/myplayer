@@ -58,6 +58,8 @@ my $player_state = '';
 my $player_dur = 0;
 my $lyrics_fname = '';
 
+my @rnd;
+
 my $glade_file = "$FindBin::Bin/myplayer.glade";
 
 my $builder = Gtk2::Builder->new();
@@ -85,11 +87,13 @@ my $cnt = 0;
 my @songs = sort { $a->[0] cmp $b->[0] }
                 map 
                 { 
+                      push(@rnd, $cnt);
                       my $mp3=MP3::Tag->new("$song_dir/$_"); 
                       my @info=$mp3->autoinfo; 
                       $progress->set_text("$cnt/$#files");
                       $progress->set_fraction($cnt++/$#files);
                       Gtk2->main_iteration;
+                      
                       utf8::decode($_); 
 #                      print("Song: $info[2]: $info[0]\n");
                       [$info[0], $info[2], $_] 
@@ -643,7 +647,17 @@ sub play_next
 {
     if ($builder->get_object('tbShuffle')->get_active())
     {
-        $playing = int(rand(scalar(@{$song_list->{data}})));
+        # $playing = int(rand(scalar(@{$song_list->{data}})));
+        my $next = rand(scalar(@rnd));
+        $playing = $rnd[$next];
+        $rnd[$next] = $rnd[$#rnd];
+        pop(@rnd);
+        debug(3, "Random queue len: %d", scalar(@rnd));
+        if (scalar(@rnd) <= 360)
+        {
+            debug(5, "Reinitializing random queue (qlen: %d, play: %d)", scalar(@songs), $playing);
+            @rnd = (0 .. $#songs);
+        }
     }
     else
     {
