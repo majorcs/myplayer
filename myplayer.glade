@@ -378,19 +378,10 @@
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="model">lsSongs</property>
+                    <property name="reorderable">True</property>
+                    <property name="rules_hint">True</property>
                     <property name="search_column">0</property>
                     <signal name="row_activated" handler="on_tvSongs_row_activated"/>
-                    <child>
-                      <object class="GtkTreeViewColumn" id="treeviewcolumn1">
-                        <property name="title">column</property>
-                        <child>
-                          <object class="GtkCellRendererText" id="cellrenderertext2"/>
-                          <attributes>
-                            <attribute name="text">0</attribute>
-                          </attributes>
-                        </child>
-                      </object>
-                    </child>
                   </object>
                 </child>
               </object>

@@ -10,6 +10,8 @@ use FindBin;
 use Config::Simple;
 use List::Util qw(min max);
 use Color::Calc;
+use DBI;
+use POSIX;                  
 
 use Glib qw/TRUE FALSE/;
 use Gtk2 '-init';
@@ -29,6 +31,21 @@ if (-z $conf_file || ! -f $conf_file)
     $cfg->param('__', time());
     $cfg->save($conf_file);
     $cfg = undef;
+}
+
+my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.myplayer.db","","");
+my $sth = $dbh->table_info(undef, undef, 'PLAYINFO');
+my $ret = $sth->fetchall_arrayref({});
+my $finfo;
+if (!scalar(@$ret))
+{
+    $sth = $dbh->do("create table PLAYINFO (fname varchar(512) primary key not null, lastplay int);");
+}
+else
+{
+    $finfo = $dbh->selectall_hashref("select fname, lastplay from PLAYINFO;", ['fname']);
+    
+    # print(Dumper($finfo));
 }
 
 my %Config;
@@ -95,8 +112,10 @@ my @songs = sort { $a->[0] cmp $b->[0] }
                       Gtk2->main_iteration;
                       
                       utf8::decode($_); 
+                      my $diff = time() - $finfo->{$_}->{lastplay};
+                      my $lasttime = get_diff_time($diff);
 #                      print("Song: $info[2]: $info[0]\n");
-                      [$info[0], $info[2], $_] 
+                      [$info[0], $info[2], $_, $lasttime] 
                 } @files;
 
 my $song_list = Gtk2::SimpleList->new_from_treeview (
@@ -104,6 +123,7 @@ my $song_list = Gtk2::SimpleList->new_from_treeview (
     'Song' => 'text',
     'Artist' => 'text',
     'Filename' => 'text',
+    'Last Play' => 'text',
 );
 
 push(@{$song_list->{data}}, @songs);
@@ -137,6 +157,27 @@ Gtk2->main;
 exit(0);
 
 #########################
+
+sub get_diff_time
+{
+    my ($diff) = @_;
+    
+    my $lasttime;
+    if ($diff < 3600)
+    {
+        $lasttime = sprintf("%d mins ago", $diff/60);
+    }
+    elsif ($diff < 86400)
+    {
+        $lasttime = sprintf("%2.1lf hours ago", $diff/3600);
+    }
+    elsif ($diff < 2592000)
+    {
+        $lasttime = sprintf("%2.1lf days ago", $diff/86400);
+    }
+
+    return $lasttime;    
+}
 
 sub debug
 {
@@ -276,10 +317,28 @@ sub change_song
 {
     my($num, $fname) = @_;
 
+    
+    
     debug(5, "Starting: %s", $fname);
     $frame = 0;
     $player_dur = 0;
     $capture_time = time();
+
+    my ($shortname) = $fname =~ /.*\/(.*$)/;
+    $shortname = $dbh->quote($shortname);
+    my $ret = $dbh->selectrow_hashref("select * from PLAYINFO where fname = $shortname");
+    my $cmd;
+    if (!$ret)
+    {
+        $cmd = sprintf("insert into PLAYINFO values(%s, %d)", $shortname, int(time())); 
+    }
+    else
+    {
+        $cmd = sprintf("update PLAYINFO set lastplay = %d where fname = %s", int(time()), $shortname); 
+    }
+    debug(6, "SQL: $cmd");
+    $dbh->do($cmd);
+    # print(Dumper($ret));
 
     $player -> set_state("null");
     sleep(0.1);
@@ -491,7 +550,7 @@ sub on_winDisplay_key_press_event
 {
     my ($win, $event) = @_;
 
-    print Dumper($event->keyval);
+    # print Dumper($event->keyval);
     if ($event->keyval == 65480 and $winDisplay->{fs} == 0)
     {
         $winDisplay->fullscreen();
@@ -557,7 +616,7 @@ sub on_winDisplay_event
 {
     my ($win, $event) = @_;
     
-    print Dumper($event);
+    # print Dumper($event);
 }
 
 sub update_lines
@@ -811,7 +870,7 @@ sub bus_message
 
 sub on_ebEditor_key_press_event
 {
-    print Dumper(\@_);
+    # print Dumper(\@_);
     
     
 }
