@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-# apt-get install libmp3-tag-perl libconfig-simple-perl libcolor-calc-perl libgtk2-sourceview2-perl libgstreamer-perl
+# apt-get install libmp3-tag-perl libconfig-simple-perl libcolor-calc-perl libgtk2-sourceview2-perl libgstreamer-perl libdbd-sqlite3-perl
 
 use Data::Dumper;
 use Term::ANSIColor;
