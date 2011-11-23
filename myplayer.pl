@@ -7,6 +7,7 @@ use Term::ANSIColor;
 use MP3::Tag;
 use Time::HiRes qw ( time alarm sleep );
 use FindBin;
+use File::Basename;
 use Config::Simple;
 use List::Util qw(min max);
 use Color::Calc;
@@ -173,7 +174,7 @@ sub get_diff_time
     }
     elsif ($diff < 2592000)
     {
-        $lasttime = sprintf("%2.1lf days ago", $diff/86400);
+        $lasttime = sprintf("%4.1lf days ago", $diff/86400);
     }
 
     return $lasttime;    
@@ -190,13 +191,41 @@ sub debug
     print("\n");
 }
 
+sub on_btnLoadMp3_clicked
+{
+    debug(5, "Load MP3 from file.");
+    
+    my $filter = Gtk2::FileFilter->new();
+    $filter->set_name("Mp3");
+    $filter->add_mime_type("audio/mpeg");
+
+    my $file_chooser =  Gtk2::FileChooserDialog->new ('Select an MP3 to open', undef, 'open', 'gtk-cancel' => 'cancel', 'gtk-ok' => 'ok' );
+    $file_chooser->add_filter($filter);
+    
+    my $filename;
+    if ($file_chooser->run eq 'ok'){
+       $filename = $file_chooser->get_filename;
+       print "filename $filename\n";
+
+       my $mp3=MP3::Tag->new($filename);
+       my @info=$mp3->autoinfo; 
+
+       push(@{$song_list->{data}}, [$info[0], $info[2], $filename, 0]);
+
+       $playing = scalar(@{$song_list->{data}}) - 1;
+       change_song(scalar(@{$song_list->{data}}) - 1, $filename);
+    }
+
+    $file_chooser->destroy;    
+}
+
 sub on_vbEditor_key_press_event
 {
     my($win, $event, $tmp) = @_;
 
     debug(5, sprintf("Key pressed: %d...", $event->keyval));
     
-    # F5: insert new timestamp
+    # F5: insert new timestamp to the next possible position
     if ($event->keyval == 65474)
     {
         #$sb
@@ -211,7 +240,7 @@ sub on_vbEditor_key_press_event
 
         my $stamp = sprintf("[%02d:%02d:%03d]", $player_pos / 60000, $player_pos % 60000 / 1000, $player_pos % 1000);
 
-        debug(5, sprintf("TimePos: %d, Lines: %d, Line: %d, Offset: %d, Text: %s", $player_pos, $lines, $line, $lineoffset, $text));
+        # debug(5, sprintf("F5: TimePos: %d, Lines: %d, Line: %d, Offset: %d, Text: %s", $player_pos, $lines, $line, $lineoffset, $text));
 
         # Check if the cursor is at/within a timestamp. If yes, then replace it with the current timestamp
         while ($text =~ /\[\d+:\d+:\d+\]/g) 
@@ -233,12 +262,11 @@ sub on_vbEditor_key_press_event
 
         # Find where to put the cursor after the new timestamp inserted
         # If there is a non-whitespace character after a white-space, then put the cursor there.
-        # Or if there is a timestamp, the put the cursor there
+        # Or if there is a timestamp, then put the cursor there
         # Or find the end of the line without a timestamp
         my $moved;
         while ($text =~ /\s\K[^\s]|\[\d+:\d+:\d+\]|(?<!\[\d\d:\d\d:\d\d\d\])$/g) 
         {
-            printf("QQ: %d, %d\n", $-[0], $newpos);
             if ($-[0] > $newpos)
             {
                 $newpos = $-[0];
@@ -263,6 +291,76 @@ sub on_vbEditor_key_press_event
         $sb->place_cursor($sb->get_iter_at_offset($newpos));
         $view->scroll_mark_onscreen($sb->get_insert());
 
+    }
+    # F6: insert new timestamp to the beginning/end of the lines only
+    elsif ($event->keyval == 65475)
+    {
+        my $lines = $sb->get_line_count();
+        my $curpos = $sb->get_iter_at_mark($sb->get_insert());
+        my $line = $curpos->get_line();
+        my $start = $sb->get_iter_at_line($line);
+        my $end = (($lines - 1) > $line ) ? $sb->get_iter_at_line($line+1) : $sb->get_end_iter();
+        my $text = $sb->get_text($start, $end, 0);
+        my $lineoffset = $curpos->get_line_offset();
+        my $newpos;
+
+        my $stamp = sprintf("[%02d:%02d:%03d]", $player_pos / 60000, $player_pos % 60000 / 1000, $player_pos % 1000);
+
+        # debug(5, sprintf("F6: TimePos: %d, Lines: %d, Line: %d, Offset: %d, Text: %s", $player_pos, $lines, $line, $lineoffset, $text));
+
+        # Check if the cursor is at/within a timestamp. If yes, then replace it with the current timestamp
+        while ($text =~ /\[\d+:\d+:\d+\]/g) 
+        {
+            if (($lineoffset >= $-[0]) and ($lineoffset < $+[0]))
+            {
+                $text = substr($text, 0, $-[0]) . $stamp . substr($text, $+[0]);
+                $newpos = $-[0] + length($stamp);
+                last;
+            }
+        }
+
+        # If the cursor wasn't in a timestamp, then simply insert the new timestamp where it is
+        if (!$newpos)
+        {
+            $text = substr($text, 0, $lineoffset) . $stamp . substr($text, $lineoffset);
+            $newpos = $lineoffset + length($stamp);
+        }
+
+        # Find where to put the cursor after the new timestamp inserted
+        my $moved;
+        while ($text =~ /\n\K[^\n]|\[\d+:\d+:\d+\]|(?<!\[\d\d:\d\d:\d\d\d\])$/g) 
+        {
+            if ($-[0] > $newpos)
+            {
+                $newpos = $-[0];
+                $moved = 1;
+                last;
+            }
+        }
+        # If we didn't find the next position, then go to the next line
+        if (!$moved)
+        {
+            $newpos = $sb->get_iter_at_line($line+1)->get_offset();
+        }
+        else
+        {
+            $newpos += $start->get_offset();
+        }
+
+        # $text = $stamp.$text;
+        
+        $sb->delete($start, $end);
+        $sb->insert($start, $text);
+        $sb->place_cursor($sb->get_iter_at_offset($newpos));
+        $view->scroll_mark_onscreen($sb->get_insert());
+    }
+    elsif ($event->keyval == 269025062)
+    {
+        $player->seek(1, 'time', 'flush', 'set', ($player_pos > 10000) ? ($player_pos - 10000) * 1000000 : 0, 'none', 0);
+    }
+    elsif ($event->keyval == 269025063)
+    {
+        $player->seek(1, 'time', 'flush', 'set', ($player_pos + 10000) * 1000000, 'none', 0);
     }
 }
 
@@ -294,6 +392,64 @@ sub on_btnLoadLyrics_clicked
     }
 }
 
+sub on_btnSaveLyrics_clicked
+{
+    debug(5, sprintf("Save lyrics to file: %s", $lyrics_fname));
+    
+    my $retval;
+    if (-f $lyrics_fname)
+    {
+    
+        my $dialog = Gtk2::MessageDialog->new_with_markup ($winPlayer, [qw/modal destroy-with-parent/], 'question', 'yes-no', "Overwrite existing file: <b>\n$lyrics_fname</b>");
+        $retval = $dialog->run;
+        $dialog->destroy;    
+
+        if ($retval eq 'yes')
+        {
+            rename($lyrics_fname, $lyrics_fname . ".bak-". time());
+        }
+    }
+
+    if (((-f $lyrics_fname) and ($retval eq 'yes')) or (!-f $lyrics_fname))
+    {
+        my $lyrics = $sb->get_text($sb->get_start_iter(), $sb->get_end_iter(), 0);
+        #print $lyrics;
+        open(F, "> $lyrics_fname");
+        print(F $lyrics);
+        close(F);
+    }
+    
+}
+
+sub on_tbPlay_clicked
+{
+
+    my ($result,$state,$pending) = $player->get_state(0);
+    debug(5, "Play button clicked ". $builder->get_object('tbPlay')->get_active() . " - " . $state);
+    
+    if ($builder->get_object('tbPlay')->get_active())
+    {
+        debug(3, "Play started");
+        if ($state eq 'paused')
+        {
+            $player->set_state("playing");
+        }
+        elsif ($playing > -1)
+        {
+            play($playing);
+        }
+        else
+        {
+            play_next();
+        }
+    }
+    else
+    {
+        debug(3, "Play paused");
+        $player->set_state("paused");    
+    }
+}
+
 sub on_winPlayer_delete_event
 {
     debug(5, "Exiting...");
@@ -306,19 +462,42 @@ sub on_tvSongs_row_activated
 {
     my ($list, $treepath, $column) = @_;
 
-    my $fname = "$song_dir/" . $song_list->get_row_data_from_path ($treepath)->[2];
+    my $selected = $song_list->get_row_data_from_path ($treepath)->[2];
+    my $fname;
+    if ($selected =~ /^\//)
+    {
+        $fname = $selected;
+    }
+    else
+    {
+        $fname = "$song_dir/" . $selected;
+    }
     ($playing) = $song_list->get_selected_indices();
     utf8::encode($fname);
     debug(3, "Clicked on: [%d] %s", $playing, $fname);
     change_song($playing, $fname);
 }
 
+sub play_file
+{
+    my ($fname) = @_;
+
+    $player->set_state("null");
+    sleep(0.1);
+    $player->set(uri => Glib::filename_to_uri $fname, "localhost");
+    my $ret = $player->set_state("playing");
+    
+    debug(5, "Return value of startup: $ret");
+    $should_play = 1;
+
+    my $dur_query = GStreamer::Query::Duration -> new("time");
+    $player->query($dur_query);
+}
+
 sub change_song
 {
     my($num, $fname) = @_;
 
-    
-    
     debug(5, "Starting: %s", $fname);
     $frame = 0;
     $player_dur = 0;
@@ -340,16 +519,9 @@ sub change_song
     $dbh->do($cmd);
     # print(Dumper($ret));
 
-    $player -> set_state("null");
-    sleep(0.1);
-    $player->set(uri => Glib::filename_to_uri $fname, "localhost");
-    my $ret = $player->set_state("playing");
-    
-    debug(5, "Return value of startup: $ret");
-    $should_play = 1;
+    $builder->get_object('tbPlay')->set_active(1);
+    play_file($fname);
 
-    my $dur_query = GStreamer::Query::Duration -> new("time");
-    $player->query($dur_query);
 
     $song_list->select($num);
 
@@ -434,12 +606,16 @@ sub timer
 
 sub on_hsPlayPosition_change_value
 {
+    print(Dumper(\@_));
+
     my ($range) = @_;
     
     my $pos = $range->get_value();
+    debug(5, "Set position: $pos");
     
-    #$player->jump($pos/$player->tpf);
-    
+    # $player->jump($pos/$player->tpf);
+    # $player->seek(1, 'time', 'flush', 'set', ($player_pos > 10000) ? ($player_pos - 10000) * 1000000 : 0, 'none', 0);
+            
     return 0;
 }
 
@@ -702,6 +878,14 @@ sub update_lines
     
 }
 
+sub play
+{
+    my $fname=$song_dir . "/" . @{$song_list->{data}}[$playing]->[2];
+    utf8::encode($fname);
+    debug(3, "Playing next song: [%d] %s", $playing, $fname);
+    change_song($playing, $fname);
+}
+
 sub play_next
 {
     if ($builder->get_object('tbShuffle')->get_active())
@@ -712,7 +896,7 @@ sub play_next
         $rnd[$next] = $rnd[$#rnd];
         pop(@rnd);
         debug(3, "Random queue len: %d", scalar(@rnd));
-        if (scalar(@rnd) <= 360)
+        if (scalar(@rnd) <= 1)
         {
             debug(5, "Reinitializing random queue (qlen: %d, play: %d)", scalar(@songs), $playing);
             @rnd = (0 .. $#songs);
@@ -722,10 +906,8 @@ sub play_next
     {
         $playing++;
     }
-    my $fname=$song_dir . "/" . @{$song_list->{data}}[$playing]->[2];
-    utf8::encode($fname);
-    debug(3, "Playing next song: [%d] %s", $playing, $fname);
-    change_song($playing, $fname);
+    
+    play($playing);
 }
 
 sub on_btnNext_clicked
