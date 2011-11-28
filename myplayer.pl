@@ -23,6 +23,9 @@ use GStreamer '-init';
 
 use strict;
 use utf8;
+use locale;
+
+setlocale(LC_COLLATE, 'hu_HU.UTF-8');
 
 my $conf_file = "$ENV{HOME}/.mkp.conf";
 
@@ -75,6 +78,7 @@ my $player_pos = 0;
 my $player_state = '';
 my $player_dur = 0;
 my $lyrics_fname = '';
+my %lyrics_options;
 
 my @rnd;
 
@@ -538,16 +542,26 @@ sub change_song
         $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $info[2] . " - " . $info[0] . "</span>");
         $builder->get_object('lblTitle')->set_use_markup(1);
         open(F, $lyrics_fname);
+        %lyrics_options = ();
         while(<F>)
         {
             chomp;
             utf8::decode($_);
+            if (/^#/)
+            {
+                if (/^#OPTION#(\w+):\s+(.+)$/)
+                {
+                    $lyrics_options{$1} = $2;
+                }
+                next;
+            }
             
-            push(@lines, [map { (/(\d+):(\d+):(\d+)/) ? ($1*60+$2)*1000+$3 : $_ } (/(\[[0-9:]+\]|[^\[]+)/g)] );
+            push(@lines, [map { (/(\d+):(\d+):(\d+)/) ? ($1*60+$2)*1000+$3+$lyrics_options{OFFSET} : $_ } (/(\[[0-9:]+\]|[^\[]+)/g)] );
             
         }
         close(F);
         #print Dumper(\@lines);
+        print Dumper(\%lyrics_options);
         
         $winDisplay->show();
         my ($width, $height) = $winDisplay->get_size();
