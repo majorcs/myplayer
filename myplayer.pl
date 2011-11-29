@@ -89,6 +89,7 @@ my $i = $builder->add_from_file ($glade_file);
 $builder->connect_signals();
 
 my $vbEditor = $builder->get_object('vbEditor');
+my $lyrics_progress = $builder->get_object('hpProgress');
 
 my $sb = Gtk2::SourceView2::Buffer->new(undef);
 # $sb->set_highlight(0);
@@ -155,6 +156,9 @@ foreach $i (1..5)
 {
     $builder->get_object("viewport$i")->modify_bg('normal', ($i == 3) ? Gtk2::Gdk::Color->parse( $Config{'Colors.HighlightBackground'} || 'yellow' ) : Gtk2::Gdk::Color->parse( $Config{'Colors.NormalBackground'} || 'black' ));
 }
+
+$builder->get_object("viewport6")->modify_bg('normal', Gtk2::Gdk::Color->parse( $Config{'Colors.HighlightBackground'} || 'yellow' ));
+$builder->get_object("viewport7")->modify_bg('normal', Gtk2::Gdk::Color->parse( $Config{'Colors.NormalBackground'} || 'black' ));
 
 Glib::Timeout->add ($period, \&timer);
 Gtk2->main;
@@ -613,6 +617,11 @@ sub timer
         my $play_pos = $builder->get_object('hsPlayPosition');
         $play_pos->set_value($player_pos);
         update_lines($player_pos/1000);
+        
+        my $percent = $player_pos/$player_dur;
+        $lyrics_progress->set_position($last_width * $percent);
+        #debug(6, "PERCENT: $percent, $last_width, ". $last_width*$percent);
+        
     }
         
     return 1;
