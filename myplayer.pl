@@ -24,6 +24,10 @@ use GStreamer '-init';
 use strict;
 use utf8;
 use locale;
+binmode STDOUT, ":utf8";
+
+#open(DBG, ">/var/tmp/karaokedebug.txt");
+#binmode DBG, ":utf8";
 
 setlocale(LC_COLLATE, 'hu_HU.UTF-8');
 
@@ -79,6 +83,8 @@ my $player_state = '';
 my $player_dur = 0;
 my $lyrics_fname = '';
 my %lyrics_options;
+
+my $dbglevel = 2;
 
 my @rnd;
 
@@ -193,10 +199,13 @@ sub debug
     my $level = shift;
     my @dbg = @_;
     
-    $dbg[0] = Term::ANSIColor::color('bold red') . "[" . Term::ANSIColor::color('white') . $level . Term::ANSIColor::color('red') . "]" . Term::ANSIColor::color('reset') . $dbg[0];
-    
-    printf(@dbg);
-    print("\n");
+    if ($level <= $dbglevel)
+    {
+        $dbg[0] = Term::ANSIColor::color('bold red') . "[" . Term::ANSIColor::color('white') . $level . Term::ANSIColor::color('red') . "]" . Term::ANSIColor::color('reset') . $dbg[0];
+        
+        printf(@dbg);
+        print("\n");
+    }
 }
 
 sub on_btnLoadMp3_clicked
@@ -736,7 +745,7 @@ sub resize
     my $al_inverse = $al->copy();
     my $cc = new Color::Calc(OutputFormat => 'tuple');
     my @color = map { $_ * 0xFF } $cc->get($Config{'Colors.NormalText'} || 'yellow');
-    debug("COLOR: ", join(",", @color));
+    debug(5, "COLOR: ", join(",", @color));
     my $x = Pango::AttrForeground->new(@color);
     $al->insert($x);
     foreach my $i (1..5)
@@ -860,6 +869,7 @@ sub update_lines
                 {
                     $dirty=1;
                     $builder->get_object("lblLine$i")->set_label($line);
+                    #print(DBG "$i : $line\n");
                 }
             }
             else
