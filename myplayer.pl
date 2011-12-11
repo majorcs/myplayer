@@ -551,7 +551,9 @@ sub change_song
         my $mp3 = MP3::Tag->new("$fname"); 
         my @info=$mp3->autoinfo;
         @lines=();
-        push(@lines, [ 0, "<span underline='double'>" . $info[2] . " - " . $info[0] . "</span>" ]);
+        my $foreground = $Config{'Colors.NormalText'} || 'yellow';
+        my $background = $Config{'Colors.NormalBackground'} || 'black';
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $info[2] . " - " . $info[0] . "</span>" ]);
         $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $info[2] . " - " . $info[0] . "</span>");
         $builder->get_object('lblTitle')->set_use_markup(1);
         open(F, $lyrics_fname);
@@ -855,6 +857,9 @@ sub update_lines
         $next_time = $lines[$i+1]->[0];
     }
     
+    my $bullets_color = $Config{'Colors.Bullets'} || 'black';
+    my $highlight_background = $Config{'Colors.HighlightBackground'} || 'yellow';
+    my $background = $Config{'Colors.NormalBackground'} || 'yellow';
     $dirty = 0;
     foreach my $i (1..5)
     {
@@ -869,7 +874,7 @@ sub update_lines
                 {
                     $dirty=1;
                     $builder->get_object("lblLine$i")->set_label($line);
-                    #print(DBG "$i : $line\n");
+                    # print(DBG "$i : $line\n");
                 }
             }
             else
@@ -889,8 +894,7 @@ sub update_lines
                     $timestr = "● " x $diff;
                 }
                 my $cc = new Color::Calc(OutputFormat => 'html');
-                my $bullets_color = $Config{'Colors.Bullets'} || 'black';
-                $timestr = "<span foreground='$bullets_color'>".$timestr."</span>";
+                $timestr = "<span foreground='$bullets_color' background='$highlight_background'>".$timestr."</span>";
                 
                 if ($timestr ne $old_content)
                 {
@@ -1007,12 +1011,15 @@ sub get_line
     my $cc = new Color::Calc(OutputFormat => 'html');
     my $progress_color = $Config{'Colors.Progress'} || 'red';
     my $foreground = $Config{'Colors.HighlightForeground'} || 'black';
+    my $highlight_background = $Config{'Colors.HighlightBackground'} || 'yellow';
+    my $background = $Config{'Colors.NormalBackground'} || 'black';
     if ($time == 0)
     {
         for ($i=1; $i <= $#$line; $i += 2)
         {
             $ret .= $line->[$i];
         }
+        $ret = "<span foreground='$foreground' background='$background'>$ret</span>";
     }
     else
     {
@@ -1027,12 +1034,12 @@ sub get_line
                 my $pos = int($linelen * $t / $linetime);
                 #debug(10, "LEN: $linelen, TIME: $time, $linetime, POS: $pos");
 
-                $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span><span foreground='$foreground'>" . substr($line->[$i], $pos);
+                $ret = "<span foreground='$progress_color' background='$highlight_background'>$ret" . substr($line->[$i], 0, $pos) . "</span><span foreground='$foreground' background='$highlight_background'>" . substr($line->[$i], $pos);
                 $span = 1;
             }
             elsif (($i == $#$line - 1) and ($time > $line->[$i+1]))
             {
-                $ret = "<span foreground='$progress_color'>$ret" . $line->[$i] . "</span>";
+                $ret = "<span foreground='$progress_color' background='$highlight_background'>$ret" . $line->[$i] . "</span>";
             }
             else
             {
@@ -1043,7 +1050,7 @@ sub get_line
                     my $linetime = $nextstart - $line->[$i-1];
                     my $t = $time - $line->[$i-1];
                     my $pos = int($linelen * $t / $linetime);
-                    $ret = "<span foreground='$progress_color'>$ret" . substr($line->[$i], 0, $pos) . "</span>" . substr($line->[$i], $pos);
+                    $ret = "<span foreground='$progress_color' background='$highlight_background'>$ret" . substr($line->[$i], 0, $pos) . "</span>" . substr($line->[$i], $pos);
                 }
                 else
                 {
@@ -1057,10 +1064,11 @@ sub get_line
         }
         else
         {
-            $ret = "<span foreground='$foreground'>$ret</span>";
+            $ret = "<span foreground='$foreground' background='$highlight_background'>$ret</span>";
         }
     }
 
+    # debug(10, "STR: $ret");
     return($ret);
 }
 
