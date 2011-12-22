@@ -42,6 +42,7 @@ if (-z $conf_file || ! -f $conf_file)
 }
 
 my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.myplayer.db","","");
+$dbh->do("PRAGMA synchronous = 0");
 my $sth = $dbh->table_info(undef, undef, 'PLAYINFO');
 my $ret = $sth->fetchall_arrayref({});
 my $finfo;
@@ -52,8 +53,18 @@ if (!scalar(@$ret))
 else
 {
     $finfo = $dbh->selectall_hashref("select fname, lastplay from PLAYINFO;", ['fname']);
-    
-    # print(Dumper($finfo));
+}
+
+my $sth = $dbh->table_info(undef, undef, 'MP3INFO');
+my $ret = $sth->fetchall_arrayref({});
+my $mp3info;
+if (!scalar(@$ret))
+{
+    $sth = $dbh->do("create table MP3INFO (fname varchar(512) primary key not null, artist varchar(64), title varchar(64));");
+}
+else
+{
+    $mp3info = $dbh->selectall_hashref("select fname, artist, title from MP3INFO;", ['fname']);
 }
 
 my %Config;
@@ -116,18 +127,35 @@ my $cnt = 0;
 my @songs = sort { $a->[0] cmp $b->[0] }
                 map 
                 { 
-                      push(@rnd, $cnt);
-                      my $mp3=MP3::Tag->new("$song_dir/$_"); 
-                      my @info=$mp3->autoinfo; 
-                      $progress->set_text("$cnt/$#files");
-                      $progress->set_fraction($cnt++/$#files);
-                      Gtk2->main_iteration;
-                      
-                      utf8::decode($_); 
-                      my $diff = time() - $finfo->{$_}->{lastplay};
-                      my $lasttime = get_diff_time($diff);
-#                      print("Song: $info[2]: $info[0]\n");
-                      [$info[0], $info[2], $_, $lasttime] 
+                    my @info;
+                    push(@rnd, $cnt);
+                    if ($mp3info->{"$song_dir/$_"})
+                    {
+                        utf8::decode($mp3info->{"$song_dir/$_"}->{title});
+                        utf8::decode($mp3info->{"$song_dir/$_"}->{artist});
+                        @info = ($mp3info->{"$song_dir/$_"}->{title}, '', $mp3info->{"$song_dir/$_"}->{artist});
+                        utf8::decode($_);
+                    }
+                    else
+                    {
+                        my $mp3=MP3::Tag->new("$song_dir/$_"); 
+                        @info=$mp3->autoinfo; 
+                        my $fname = "$song_dir/$_";
+                        my $artist = $info[2];
+                        my $title = $info[0];
+                        utf8::decode($fname);
+                        my $cmd = "insert into MP3INFO values (".$dbh->quote($fname).", ".$dbh->quote($artist).", ".$dbh->quote($title).")";
+                        # print("QQQ: $cmd\n");
+                        $dbh->do($cmd);
+                        $progress->set_text("$cnt/$#files");
+                        $progress->set_fraction($cnt++/$#files);
+                        Gtk2->main_iteration;
+                          
+                    }
+                    my $diff = time() - $finfo->{$_}->{lastplay};
+                    my $lasttime = get_diff_time($diff);
+#                    print("Song: $info[2]: $info[0]\n");
+                    [$info[0], $info[2], $_, $lasttime] 
                 } @files;
 
 my $song_list = Gtk2::SimpleList->new_from_treeview (
