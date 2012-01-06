@@ -14,7 +14,7 @@ use Color::Calc;
 use DBI;
 use POSIX;                  
 
-use Glib qw/TRUE FALSE/;
+use Glib;
 use Gtk2 '-init';
 use Gtk2::SimpleList;
 use Gtk2::SourceView2;
@@ -42,6 +42,7 @@ if (-z $conf_file || ! -f $conf_file)
 }
 
 my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.myplayer.db","","");
+$dbh->{unicode} = 1;
 $dbh->do("PRAGMA synchronous = 0");
 my $sth = $dbh->table_info(undef, undef, 'PLAYINFO');
 my $ret = $sth->fetchall_arrayref({});
@@ -95,7 +96,7 @@ my $player_dur = 0;
 my $lyrics_fname = '';
 my %lyrics_options;
 
-my $dbglevel = 2;
+my $dbglevel = 6;
 
 my @rnd;
 
@@ -129,12 +130,13 @@ my @songs = sort { $a->[0] cmp $b->[0] }
                 { 
                     my @info;
                     push(@rnd, $cnt);
+                    utf8::decode($_);
+                    # print("QQQ: $song_dir/$_\n");
                     if ($mp3info->{"$song_dir/$_"})
                     {
                         utf8::decode($mp3info->{"$song_dir/$_"}->{title});
                         utf8::decode($mp3info->{"$song_dir/$_"}->{artist});
                         @info = ($mp3info->{"$song_dir/$_"}->{title}, '', $mp3info->{"$song_dir/$_"}->{artist});
-                        utf8::decode($_);
                     }
                     else
                     {
@@ -143,15 +145,15 @@ my @songs = sort { $a->[0] cmp $b->[0] }
                         my $fname = "$song_dir/$_";
                         my $artist = $info[2];
                         my $title = $info[0];
-                        utf8::decode($fname);
+#                        utf8::decode($fname);
                         my $cmd = "insert into MP3INFO values (".$dbh->quote($fname).", ".$dbh->quote($artist).", ".$dbh->quote($title).")";
-                        # print("QQQ: $cmd\n");
+                        #print("QQQ: $cmd\n");
                         $dbh->do($cmd);
-                        $progress->set_text("$cnt/$#files");
-                        $progress->set_fraction($cnt++/$#files);
-                        Gtk2->main_iteration;
                           
                     }
+                    $progress->set_text("$cnt/$#files");
+                    $progress->set_fraction($cnt++/$#files);
+                    Gtk2->main_iteration;
                     my $diff = time() - $finfo->{$_}->{lastplay};
                     my $lasttime = get_diff_time($diff);
 #                    print("Song: $info[2]: $info[0]\n");
@@ -518,7 +520,7 @@ sub on_tvSongs_row_activated
         $fname = "$song_dir/" . $selected;
     }
     ($playing) = $song_list->get_selected_indices();
-    utf8::encode($fname);
+    # utf8::encode($fname);
     debug(3, "Clicked on: [%d] %s", $playing, $fname);
     change_song($playing, $fname);
 }
@@ -543,6 +545,7 @@ sub change_song
 {
     my($num, $fname) = @_;
 
+    # utf8::decode($fname);
     debug(5, "Starting: %s", $fname);
     $frame = 0;
     $player_dur = 0;
@@ -580,9 +583,13 @@ sub change_song
         my @info=$mp3->autoinfo;
         @lines=();
         my $foreground = $Config{'Colors.NormalText'} || 'yellow';
-        my $background = $Config{'Colors.NormalBackground'} || 'black';
-        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $info[2] . " - " . $info[0] . "</span>" ]);
-        $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $info[2] . " - " . $info[0] . "</span>");
+        my $background = $Config{'Colors.NormalBackground'} || 'black';        
+        my $i = $info[2];
+        $i =~ s/&/&amp;/;
+        my $j = $info[0];
+        $j =~ s/&/&amp;/;
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $i . " - " . $j . "</span>" ]);
+        $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $i . " - " . $j . "</span>");
         $builder->get_object('lblTitle')->set_use_markup(1);
         open(F, $lyrics_fname);
         %lyrics_options = ();
@@ -946,7 +953,6 @@ sub update_lines
 sub play
 {
     my $fname=$song_dir . "/" . @{$song_list->{data}}[$playing]->[2];
-    utf8::encode($fname);
     debug(3, "Playing next song: [%d] %s", $playing, $fname);
     change_song($playing, $fname);
 }
@@ -956,10 +962,11 @@ sub play_next
     if ($builder->get_object('tbShuffle')->get_active())
     {
         # $playing = int(rand(scalar(@{$song_list->{data}})));
-        my $next = rand(scalar(@rnd));
+        my $next = int(rand(scalar(@rnd)));
         $playing = $rnd[$next];
         $rnd[$next] = $rnd[$#rnd];
         pop(@rnd);
+        debug(6, "Random info: $next, $playing");
         debug(3, "Random queue len: %d", scalar(@rnd));
         if (scalar(@rnd) <= 1)
         {
