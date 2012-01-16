@@ -401,11 +401,11 @@ sub on_vbEditor_key_press_event
         $sb->place_cursor($sb->get_iter_at_offset($newpos));
         $view->scroll_mark_onscreen($sb->get_insert());
     }
-    elsif ($event->keyval == 269025062)
+    elsif (($event->keyval == 269025062) or ($event->keyval == 65361))
     {
         $player->seek(1, 'time', 'flush', 'set', ($player_pos > 10000) ? ($player_pos - 10000) * 1000000 : 0, 'none', 0);
     }
-    elsif ($event->keyval == 269025063)
+    elsif (($event->keyval == 269025063) or ($event->keyval == 65363))
     {
         $player->seek(1, 'time', 'flush', 'set', ($player_pos + 10000) * 1000000, 'none', 0);
     }
