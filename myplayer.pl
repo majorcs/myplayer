@@ -25,6 +25,8 @@ use strict;
 use utf8;
 use locale;
 binmode STDOUT, ":utf8";
+binmode STDIN, ":utf8";
+binmode STDERR, ":utf8";
 
 #open(DBG, ">/var/tmp/karaokedebug.txt");
 #binmode DBG, ":utf8";
@@ -95,6 +97,7 @@ my $player_state = '';
 my $player_dur = 0;
 my $lyrics_fname = '';
 my %lyrics_options;
+my $last_db_check = time();
 
 my $dbglevel = 6;
 
@@ -157,15 +160,15 @@ my @songs = sort { $a->[0] cmp $b->[0] }
                     my $diff = time() - $finfo->{$_}->{lastplay};
                     my $lasttime = get_diff_time($diff);
 #                    print("Song: $info[2]: $info[0]\n");
-                    [$info[0], $info[2], $_, $lasttime] 
+                    [$info[0], $info[2], $lasttime, $_] 
                 } @files;
 
 my $song_list = Gtk2::SimpleList->new_from_treeview (
     $builder->get_object('tvSongs'),
     'Song' => 'text',
     'Artist' => 'text',
-    'Filename' => 'text',
     'Last Play' => 'text',
+    'Filename' => 'text',
 );
 
 push(@{$song_list->{data}}, @songs);
@@ -257,7 +260,7 @@ sub on_btnLoadMp3_clicked
        my $mp3=MP3::Tag->new($filename);
        my @info=$mp3->autoinfo; 
 
-       push(@{$song_list->{data}}, [$info[0], $info[2], $filename, 0]);
+       push(@{$song_list->{data}}, [$info[0], $info[2], 0, $filename]);
 
        $playing = scalar(@{$song_list->{data}}) - 1;
        change_song(scalar(@{$song_list->{data}}) - 1, $filename);
@@ -509,7 +512,7 @@ sub on_tvSongs_row_activated
 {
     my ($list, $treepath, $column) = @_;
 
-    my $selected = $song_list->get_row_data_from_path ($treepath)->[2];
+    my $selected = $song_list->get_row_data_from_path ($treepath)->[3];
     my $fname;
     if ($selected =~ /^\//)
     {
@@ -588,7 +591,8 @@ sub change_song
         $i =~ s/&/&amp;/;
         my $j = $info[0];
         $j =~ s/&/&amp;/;
-        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $i . " - " . $j . "</span>" ]);
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $i . "</span>" ]);
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $j . "</span>" ]);
         $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $i . " - " . $j . "</span>");
         $builder->get_object('lblTitle')->set_use_markup(1);
         open(F, $lyrics_fname);
@@ -626,12 +630,35 @@ sub change_song
     }
 }
 
+sub recheck_db()
+{
+    debug(5, "Rereading DB");
+
+    $finfo = $dbh->selectall_hashref("select fname, lastplay from PLAYINFO;", ['fname']);
+
+    for (my $i=0; $i < scalar(@{$song_list->{data}}); $i++)
+    {
+        my $song = $song_list->{data}->[$i];
+        if ($finfo->{$song->[3]})
+        {
+            my $diff = time() - $finfo->{$song->[3]}->{lastplay};
+            my $lasttime = get_diff_time($diff);
+            $song->[2] = $lasttime;
+        }
+    }
+}
+
 sub timer
 {
     my $pos_query = GStreamer::Query::Position -> new("time");
     $player->query($pos_query);
     $player_pos = int(($pos_query -> position)[1] / 1000000);
       
+    if (time() - $last_db_check > ($Config{'DB.RereadPeriod'} || 60))
+    {
+        $last_db_check = time();
+        recheck_db();
+    }
       
     if ($capturing)
     {
@@ -952,7 +979,7 @@ sub update_lines
 
 sub play
 {
-    my $fname=$song_dir . "/" . @{$song_list->{data}}[$playing]->[2];
+    my $fname=$song_dir . "/" . @{$song_list->{data}}[$playing]->[3];
     debug(3, "Playing next song: [%d] %s", $playing, $fname);
     change_song($playing, $fname);
 }
@@ -994,7 +1021,7 @@ sub save_picture
         return;
     }
 
-    my $dirname = @{$song_list->{data}}[$playing]->[1] . "_" . @{$song_list->{data}}[$playing]->[2];
+    my $dirname = @{$song_list->{data}}[$playing]->[1] . "_" . @{$song_list->{data}}[$playing]->[3];
     my $name = sprintf("%s/%010d.png", $dirname, $frame++);
 
 
