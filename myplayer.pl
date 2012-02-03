@@ -575,26 +575,27 @@ sub change_song
 
 
     $song_list->select($num);
+    my $last_play = $song_list->{data}->[$num]->[2];
 
     my ($short_name) = ($fname =~ /^.*?([^\/]+)\.mp3/i);
     $lyrics_fname = $lyrics_dir . "/$short_name.txt";
     
+    my $mp3 = MP3::Tag->new("$fname"); 
+    my @info=$mp3->autoinfo;
+    my $i = $info[2];
+    $i =~ s/&/&amp;/;
+    my $j = $info[0];
+    $j =~ s/&/&amp;/;
+    $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $i . " - " . $j . "</span>");
+    $builder->get_object('lblTitle')->set_use_markup(1);
+    my $foreground = $Config{'Colors.NormalText'} || 'yellow';
+    my $background = $Config{'Colors.NormalBackground'} || 'black';        
     if (-r $lyrics_fname)
     {
         debug(3, "Opening lyrics file: $lyrics_fname");
-        my $mp3 = MP3::Tag->new("$fname"); 
-        my @info=$mp3->autoinfo;
         @lines=();
-        my $foreground = $Config{'Colors.NormalText'} || 'yellow';
-        my $background = $Config{'Colors.NormalBackground'} || 'black';        
-        my $i = $info[2];
-        $i =~ s/&/&amp;/;
-        my $j = $info[0];
-        $j =~ s/&/&amp;/;
-        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $i . "</span>" ]);
-        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $j . "</span>" ]);
-        $builder->get_object('lblTitle')->set_text("<span weight='bold'>" . $i . " - " . $j . "</span>");
-        $builder->get_object('lblTitle')->set_use_markup(1);
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $i ."-". $j . "</span>" ]);
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>" . $last_play . "</span>" ]);
         open(F, $lyrics_fname);
         %lyrics_options = ();
         while(<F>)
@@ -614,20 +615,23 @@ sub change_song
             
         }
         close(F);
-        #print Dumper(\@lines);
-        print Dumper(\%lyrics_options);
+        #print Dumper(\%lyrics_options);
         
-        $winDisplay->show();
-        my ($width, $height) = $winDisplay->get_size();
-        $last_width = 0;
-        $last_height = 0;
-        resize($width, $height);
     }
     else
     {
-        $winDisplay->hide();
+        @lines=();
+        # $winDisplay->hide();
+        push(@lines, [ 0, "<span underline='double' foreground='$foreground' background='$background'>No lyrics available</span>" ]);
+        push(@lines, [ 0, '' ]);
         debug(3, "Can't open lyrics file: $lyrics_fname");
     }
+    print Dumper(\@lines);
+    $winDisplay->show();
+    my ($width, $height) = $winDisplay->get_size();
+    $last_width = 0;
+    $last_height = 0;
+    resize($width, $height);
 }
 
 sub recheck_db()
