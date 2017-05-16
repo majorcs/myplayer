@@ -100,7 +100,7 @@ my $lyrics_fname = '';
 my %lyrics_options;
 my $last_db_check = time();
 
-my $dbglevel = 6;
+my $dbglevel = 3;
 
 my @rnd;
 
@@ -696,7 +696,9 @@ sub timer
             my $dur_query = GStreamer1::Query->new_duration("time");
             $player->query($dur_query);
             $player_dur = ($dur_query -> parse_duration)[1]/1000000;
-            $play_pos->set_range(0, $player_dur);
+            my $maxpos = $player_dur <= 0 ? 1 : $player_dur;
+            debug(5, "Range: 0, $maxpos");
+            $play_pos->set_range(0, $maxpos);
         }
         debug(5, "Duration: $player_dur");
         my $play_pos = $builder->get_object('hsPlayPosition');
