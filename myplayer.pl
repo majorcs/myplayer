@@ -19,7 +19,7 @@ use Gtk2 '-init';
 use Gtk2::SimpleList;
 use Gtk2::SourceView2;
 
-use GStreamer '-init';
+use GStreamer1;
 
 use strict;
 use utf8;
@@ -31,6 +31,7 @@ binmode STDERR, ":utf8";
 #open(DBG, ">/var/tmp/karaokedebug.txt");
 #binmode DBG, ":utf8";
 
+GStreamer1::init_check([ $0, @ARGV ]);
 setlocale(LC_COLLATE, 'hu_HU.UTF-8');
 
 my $conf_file = "$ENV{HOME}/.mkp.conf";
@@ -44,7 +45,7 @@ if (-z $conf_file || ! -f $conf_file)
 }
 
 my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.myplayer.db","","");
-$dbh->{unicode} = 1;
+$dbh->{sqlite_unicode} = 1;
 $dbh->do("PRAGMA synchronous = 0");
 my $sth = $dbh->table_info(undef, undef, 'PLAYINFO');
 my $ret = $sth->fetchall_arrayref({});
@@ -180,7 +181,7 @@ $dlgStart->hide();
 $winPlayer->show();
 Gtk2->main_iteration;
 
-my $player = GStreamer::ElementFactory->make(playbin => 'playbin');
+my $player = GStreamer1::ElementFactory::make(playbin => 'playbin');
 my $bus=$player->get_bus;
 $bus->add_signal_watch;
 # $bus->signal_connect('message' => \&bus_message);
@@ -189,6 +190,10 @@ $bus->signal_connect('message::duration' => \&bus_message);
 $bus->signal_connect('message::error' => \&bus_message);
 $bus->signal_connect('message::state-changed' => \&bus_message);
 
+my $sinkname = "pulse";
+my $sink = GStreamer1::ElementFactory::make($sinkname.'sink' => $sinkname);
+die "can't creat sink $sinkname\n" unless $sink;
+$player->set('audio-sink' => $sink);
 
 my $cc = new Color::Calc(OutputFormat => 'html');
 foreach $i (1..5)
@@ -535,12 +540,13 @@ sub play_file
     $player->set_state("null");
     sleep(0.1);
     $player->set(uri => Glib::filename_to_uri $fname, "localhost");
+    #$player->set(uri => "file://".$fname);
     my $ret = $player->set_state("playing");
     
     debug(5, "Return value of startup: $ret");
     $should_play = 1;
 
-    my $dur_query = GStreamer::Query::Duration -> new("time");
+    my $dur_query = GStreamer1::Query-> new_duration("time");
     $player->query($dur_query);
 }
 
@@ -626,7 +632,7 @@ sub change_song
         push(@lines, [ 0, '' ]);
         debug(3, "Can't open lyrics file: $lyrics_fname");
     }
-    print Dumper(\@lines);
+    #print Dumper(\@lines);
     $winDisplay->show();
     my ($width, $height) = $winDisplay->get_size();
     $last_width = 0;
@@ -654,9 +660,11 @@ sub recheck_db()
 
 sub timer
 {
-    my $pos_query = GStreamer::Query::Position -> new("time");
+    my $pos_query = GStreamer1::Query->new_position("time");
     $player->query($pos_query);
-    $player_pos = int(($pos_query -> position)[1] / 1000000);
+    $player_pos = int(($pos_query -> parse_position)[1] / 1000000);
+    my($result, $state, $pending) = $player->get_state(0);
+    $player_state = $state;
       
     if (time() - $last_db_check > ($Config{'DB.RereadPeriod'} || 60))
     {
@@ -682,15 +690,15 @@ sub timer
     
     if ($player_state eq 'playing')
     {
-        if ($player_dur == 0)
+        if ($player_dur <= 0)
         {
             my $play_pos = $builder->get_object('hsPlayPosition');
-            my $dur_query = GStreamer::Query::Duration -> new("time");
+            my $dur_query = GStreamer1::Query->new_duration("time");
             $player->query($dur_query);
-            $player_dur = ($dur_query -> duration)[1]/1000000;
+            $player_dur = ($dur_query -> parse_duration)[1]/1000000;
             $play_pos->set_range(0, $player_dur);
-            debug(5, "Duration: $player_dur");
         }
+        debug(5, "Duration: $player_dur");
         my $play_pos = $builder->get_object('hsPlayPosition');
         $play_pos->set_value($player_pos);
         update_lines($player_pos/1000);
@@ -706,8 +714,6 @@ sub timer
 
 sub on_hsPlayPosition_change_value
 {
-    print(Dumper(\@_));
-
     my ($range) = @_;
     
     my $pos = $range->get_value();
@@ -950,14 +956,14 @@ sub update_lines
                 my $diff = int(($next_time - $time * 1000)/1000) + 1;
                 if ($diff > 9)
                 {
-                    $timestr = (($diff % 2) ?  "◉ " : "● ");
-                    $timestr .= "● " x 9;
+                    $timestr = (($diff % 2) ?  "◈ " : "◆ ");
+                    $timestr .= "◆ " x 9;
                     #$timestr .= $timechars[$diff-10];
                     $timestr .= "($diff)";
                 }
                 else
                 {
-                    $timestr = "● " x $diff;
+                    $timestr = "◆ " x $diff;
                 }
                 my $cc = new Color::Calc(OutputFormat => 'html');
                 $timestr = "<span foreground='$bullets_color' background='$highlight_background'>".$timestr."</span>";
@@ -1141,16 +1147,16 @@ sub get_line
 sub bus_message
 {
     my ($bus, $message) = @_;
-    # print Dumper(@_);
     
     if ($message->type & "tag")
     {
         print($message->tag_list->{artist}->[0]."\n");
     }
-    elsif ($message->type & "state-changed")
-    {
-        $player_state = $message->new_state;
-    }
+    #elsif ($message->type & "state-changed")
+    #{
+    #    $player_state = $message->parse_state_changed;
+    #    print("STATE: $player_state\n");
+    #}
     elsif ($message->type & "eos")
     {
         play_next();

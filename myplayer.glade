@@ -130,11 +130,11 @@
         <child>
           <object class="GtkVBox" id="box1">
             <property name="visible">True</property>
-            <property name="sensitive">False</property>
+            <property name="sensitive">True</property>
             <child>
               <object class="GtkVBox" id="vbox3">
                 <property name="visible">True</property>
-                <property name="sensitive">False</property>
+                <property name="sensitive">True</property>
                 <property name="homogeneous">True</property>
                 <child>
                   <object class="GtkScrolledWindow" id="scrolledwindow2">
@@ -269,7 +269,7 @@
             <child>
               <object class="GtkVBox" id="box2">
                 <property name="visible">True</property>
-                <property name="sensitive">False</property>
+                <property name="sensitive">True</property>
                 <child>
                   <object class="GtkHPaned" id="hpProgress">
                     <property name="visible">True</property>
